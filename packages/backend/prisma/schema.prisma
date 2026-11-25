@@ -1,0 +1,362 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPS
+  USER
+}
+
+enum TicketCategory {
+  HARDWARE
+  SOFTWARE
+  INTERNAL_SYSTEM
+  ASSET_REQUEST
+}
+
+enum TicketStatus {
+  OPEN
+  CLAIMED
+  RESOLVED
+  CLOSED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+  SUPER_URGENT
+}
+
+enum TicketSource {
+  WEB
+  SCAN
+}
+
+enum CommentType {
+  COMMENT
+  LLM_SUGGESTION
+  SYSTEM
+}
+
+enum KnowledgeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeKind {
+  CARD
+  DOCUMENT
+}
+
+enum KnowledgeDocType {
+  HANDBOOK
+  REFERENCE
+}
+
+enum KnowledgeSpace {
+  TERM
+  MEET
+  OFFICE
+  NET
+  BIZ
+  ASSET
+  OPS
+}
+
+enum KnowledgeLinkSource {
+  MANUAL
+  AUTO
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  displayName  String
+  email        String?
+  passwordHash String
+  role         Role      @default(USER)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  submittedTickets   Ticket[]              @relation("TicketSubmitter")
+  assignedTickets    Ticket[]              @relation("TicketAssignee")
+  comments           TicketComment[]       @relation("CommentAuthor")
+  attachments        TicketAttachment[]    @relation("AttachmentUploader")
+  knowledgeArticles  KnowledgeArticle[]    @relation("KnowledgeAuthor")
+  knowledgeOwned     KnowledgeArticle[]    @relation("KnowledgeOwner")
+  knowledgeFiles     KnowledgeAttachment[] @relation("KnowledgeAttachmentUploader")
+  knowledgeRevisions KnowledgeRevision[]   @relation("KnowledgeRevisionEditor")
+  knowledgeLinks     TicketKnowledgeLink[] @relation("KnowledgeLinkCreator")
+  contactLinks       TicketContactLink[]   @relation("TicketContactLinkCreator")
+  auditLogs          AuditLog[]            @relation("AuditUser")
+}
+
+model Ticket {
+  id           String         @id @default(cuid())
+  ticketNo     String         @unique
+  title        String
+  category     TicketCategory
+  description  String         @db.Text
+  status       TicketStatus   @default(OPEN)
+  priority     Priority       @default(MEDIUM)
+  source       TicketSource   @default(WEB)
+  reporterName String?
+  publicToken  String         @unique
+  accessCode   String         @unique
+  submitterId  String?
+  submitter    User?          @relation("TicketSubmitter", fields: [submitterId], references: [id], onDelete: SetNull)
+  assigneeId   String?
+  assignee     User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  resolution   String?        @db.Text
+  expectedAt   DateTime?
+  claimedAt    DateTime?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  comments       TicketComment[]
+  attachments    TicketAttachment[]
+  knowledgeLinks TicketKnowledgeLink[]
+  contactLinks   TicketContactLink[]
+  audits         AuditLog[]
+
+  @@index([status, category, createdAt])
+}
+
+model TicketComment {
+  id        String      @id @default(cuid())
+  ticketId  String
+  authorId  String
+  content   String      @db.Text
+  type      CommentType @default(COMMENT)
+  createdAt DateTime    @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation("CommentAuthor", fields: [authorId], references: [id])
+
+  @@index([ticketId, createdAt])
+}
+
+model TicketAttachment {
+  id         String   @id @default(cuid())
+  ticketId   String
+  filename   String
+  storedPath String
+  mimeType   String?
+  size       Int
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploader User?  @relation("AttachmentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+}
+
+model KnowledgeArticle {
+  id             String                       @id @default(cuid())
+  code           String                       @unique
+  kind           KnowledgeKind                @default(CARD)
+  docType        KnowledgeDocType?
+  space          KnowledgeSpace
+  system         String?
+  title          String
+  summary        String?                      @db.Text
+  category       TicketCategory?
+  tags           String[]                     @default([])
+  keywords       String[]                     @default([])
+  symptom        String?                      @db.Text
+  steps          Json?
+  escalation     String?                      @db.Text
+  content        String?                      @db.Text
+  status         KnowledgeStatus              @default(DRAFT)
+  authorId       String
+  author         User                         @relation("KnowledgeAuthor", fields: [authorId], references: [id])
+  ownerId        String?
+  owner          User?                        @relation("KnowledgeOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  sourceTicketId String?
+  sourceTicketNo String?
+  legacyPaths    String[]                     @default([])
+  needsReview    Boolean                      @default(false)
+  viewCount      Int                          @default(0)
+  version        Int                          @default(1)
+  publishedAt    DateTime?
+  lastVerifiedAt DateTime?
+  searchText     String                       @default("") @db.Text
+  filename       String?
+  storedPath     String?
+  mimeType       String?
+  size           Int?
+  embedding      Unsupported("vector(1536)")?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+
+  attachments KnowledgeAttachment[]
+  revisions   KnowledgeRevision[]
+  links       TicketKnowledgeLink[]
+
+  @@index([space, status, kind])
+  @@index([status, updatedAt])
+  @@index([ownerId])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model KnowledgeAttachment {
+  id         String   @id @default(cuid())
+  articleId  String
+  filename   String
+  storedPath String
+  mimeType   String?
+  size       Int
+  caption    String?
+  sortOrder  Int      @default(0)
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  article  KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  uploader User?            @relation("KnowledgeAttachmentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([articleId, sortOrder])
+}
+
+model KnowledgeRevision {
+  id        String   @id @default(cuid())
+  articleId String
+  version   Int
+  snapshot  Json
+  editorId  String?
+  editor    User?    @relation("KnowledgeRevisionEditor", fields: [editorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, version])
+  @@index([articleId, createdAt])
+}
+
+model KnowledgeSequence {
+  space KnowledgeSpace @id
+  value Int            @default(0)
+}
+
+model TicketKnowledgeLink {
+  id          String              @id @default(cuid())
+  ticketId    String
+  articleId   String
+  score       Float               @default(0)
+  autoLinked  Boolean             @default(false)
+  source      KnowledgeLinkSource @default(MANUAL)
+  createdById String?
+  createdAt   DateTime            @default(now())
+
+  ticket    Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  article   KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy User?            @relation("KnowledgeLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, articleId])
+  @@index([articleId])
+}
+
+model Contact {
+  id              String   @id @default(cuid())
+  name            String
+  role            String   @default("联系人")
+  systemName      String
+  systemShortName String?
+  category        String?
+  systemUrl       String?  @db.Text
+  unit            String?
+  businessDept    String?
+  landline        String?
+  mobile          String?
+  email           String?
+  notes           String?  @db.Text
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ticketLinks TicketContactLink[]
+
+  @@unique([systemName, name])
+  @@index([systemName, sortOrder])
+  @@index([name])
+  @@index([category])
+}
+
+model TicketContactLink {
+  id          String   @id @default(cuid())
+  ticketId    String
+  contactId   String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("TicketContactLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, contactId])
+  @@index([contactId])
+}
+
+model Subsystem {
+  id                String    @id @default(cuid())
+  name              String
+  description       String?   @db.Text
+  notes             String?   @db.Text
+  accountHint       String?
+  password          String?   @db.Text
+  passwordUpdatedAt DateTime?
+  icon              String?
+  url               String?
+  category          String?
+  tags              String[]  @default([])
+  sortOrder         Int       @default(0)
+  visible           Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([category, sortOrder])
+  @@index([visible, sortOrder])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation("AuditUser", fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String?
+  targetId   String?
+  detail     Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+  ticketId   String?
+  ticket     Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([userId, action, createdAt])
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+model TicketSequence {
+  date  String @id
+  value Int    @default(0)
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

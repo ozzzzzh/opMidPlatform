@@ -1,0 +1,40 @@
+{
+  "name": "it-ops-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "内网 IT 运维管理系统",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @it-ops/shared && npm run build -w @it-ops/backend && npm run build -w @it-ops/frontend",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run start:dev -w @it-ops/backend\" \"npm run dev -w @it-ops/frontend\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run prisma:generate -w @it-ops/backend",
+    "db:migrate": "npm run prisma:migrate -w @it-ops/backend",
+    "db:deploy": "npm run prisma:deploy -w @it-ops/backend",
+    "db:seed": "npm run db:seed -w @it-ops/backend",
+    "db:import-knowledge": "npm run db:import-knowledge -w @it-ops/backend",
+    "db:import-contacts": "npm run db:import-contacts -w @it-ops/backend",
+    "db:mock-tickets": "npm run db:mock-tickets -w @it-ops/backend"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "prettier": "^3.3.3",
+    "typescript": "5.5.4"
+  },
+  "overrides": {
+    "typescript": "5.5.4"
+  }
+}

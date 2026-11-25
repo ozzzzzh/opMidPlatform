@@ -1,0 +1,20 @@
+{
+  "name": "@it-ops/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "前后端共享类型与枚举",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src --ext .ts",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+**/uploads
+**/*.log
+.git
+.gitignore
+.vscode
+.idea
+docs
+README.md

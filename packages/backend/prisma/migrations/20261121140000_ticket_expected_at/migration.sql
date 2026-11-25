@@ -1,0 +1,1 @@
+ALTER TABLE "Ticket" ADD COLUMN "expectedAt" TIMESTAMP(3);

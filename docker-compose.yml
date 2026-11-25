@@ -1,0 +1,93 @@
+services:
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: itops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-itops}
+      POSTGRES_USER: ${POSTGRES_USER:-itops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-itops_password}
+      TZ: Asia/Shanghai
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - itops
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: itops-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-itops}:${POSTGRES_PASSWORD:-itops_password}@db:5432/${POSTGRES_DB:-itops}?schema=public'
+      JWT_SECRET: ${JWT_SECRET:-dev_only_change_this_jwt_secret_32_chars_minimum}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      UPLOAD_DIR: /app/packages/backend/uploads
+      EMBEDDING_ENABLED: ${EMBEDDING_ENABLED:-false}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin@12345}
+      SEED_OPS_PASSWORD: ${SEED_OPS_PASSWORD:-Ops@12345}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-User@12345}
+      TZ: Asia/Shanghai
+    command:
+      - sh
+      - -c
+      - 'npx prisma migrate deploy && npm run db:seed && node dist/main.js'
+    volumes:
+      - uploads_data:/app/packages/backend/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - itops
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    container_name: itops-frontend
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/ || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - itops
+
+volumes:
+  db_data:
+  uploads_data:
+
+networks:
+  itops:
+    driver: bridge
